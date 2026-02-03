@@ -151,12 +151,19 @@ async function sendMessage() {
   showTypingIndicator();
 
   try {
+    // Build conversation history for context (exclude current question)
+    const history = messageHistory.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+
     const result = await chrome.runtime.sendMessage({
       type: "ask",
       question: question,
       context: currentContext,
       url: currentUrl,
       title: currentTitle,
+      history: history,
     });
 
     hideTypingIndicator();
@@ -199,6 +206,77 @@ messageInput.addEventListener("keydown", (e) => {
   }
 });
 
+// Handle incoming selection from context menu
+async function handlePendingSelection(pending) {
+  if (!pending || !pending.selectedText) return;
+
+  // Clear the pending selection from storage
+  await chrome.storage.local.remove("pendingSelection");
+
+  // Clear all previous messages and history (fresh start with new selection)
+  chatMessages.innerHTML = "";
+  messageHistory = [];
+
+  // Build context that includes both selection and page
+  const selectionContext = `SELECTED TEXT:\n${pending.selectedText}\n\nFULL PAGE CONTEXT:\n${pending.pageContext}`;
+  currentContext = selectionContext;
+  currentUrl = pending.url;
+  currentTitle = pending.title;
+
+  // Update display
+  updateContextDisplay(currentContext.length);
+
+  // Show the selection as a message in the chat
+  const selectionText =
+    pending.selectedText.length > 500
+      ? pending.selectedText.substring(0, 500) + "..."
+      : pending.selectedText;
+
+  const selectionMsg = document.createElement("div");
+  selectionMsg.className = "message selection";
+  selectionMsg.textContent = `📋 Selected text:\n"${selectionText}"`;
+  chatMessages.appendChild(selectionMsg);
+
+  // Update placeholder and focus
+  messageInput.placeholder = "Ask about this selection...";
+  messageInput.focus();
+}
+
+// Check for pending selection from context menu
+async function checkPendingSelection() {
+  try {
+    const result = await chrome.storage.local.get("pendingSelection");
+    const pending = result.pendingSelection;
+
+    if (pending && pending.timestamp) {
+      // Only use if recent (within last 10 seconds)
+      const age = Date.now() - pending.timestamp;
+      if (age < 10000) {
+        await handlePendingSelection(pending);
+      } else {
+        // Clear stale pending selection
+        await chrome.storage.local.remove("pendingSelection");
+      }
+    }
+  } catch (err) {
+    console.error("Error checking pending selection:", err);
+  }
+}
+
+// Listen for storage changes (when selection comes in while panel is open)
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.pendingSelection?.newValue) {
+    const pending = changes.pendingSelection.newValue;
+    // Only handle recent selections
+    const age = Date.now() - pending.timestamp;
+    if (age < 10000) {
+      handlePendingSelection(pending);
+    }
+  }
+});
+
 // Initial state
 updateContextDisplay(0);
+messageInput.placeholder = "Ask a question about this page...";
 messageInput.focus();
+checkPendingSelection();

@@ -8,7 +8,7 @@ A minimal Chrome extension that lets you ask questions about the current page co
 - Extract text from selection or entire page
 - 40,000 character context limit (truncated deterministically)
 - Secure prompt injection defenses
-- Interactive setup wizard for first-time configuration
+- Uses Codex CLI login for OpenAI authentication
 - No chat history, storage, or accounts required
 
 ## Architecture
@@ -20,8 +20,8 @@ A minimal Chrome extension that lets you ask questions about the current page co
 └─────────────────┘     └──────────────────┘     └─────────────────┘
                                 │                         │
                                 ▼                         ▼
-                        chrome.scripting            OpenAI API
-                        (extract content)
+                        chrome.scripting          ChatGPT Backend API
+                        (extract content)       (uses your subscription)
 ```
 
 ## Setup Instructions
@@ -39,40 +39,13 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Run the Backend (with Setup Wizard)
+### 2. Run the Backend
 
 ```bash
 cd backend
+codex login
 python main.py
 ```
-
-On first run, an **interactive setup wizard** will guide you through:
-
-```
-============================================================
-   ai-slider Backend - Setup Wizard
-============================================================
-
-This wizard will help you configure the backend.
-You'll need an OpenAI API key to continue.
-
-[Step 1] OpenAI API Key
-----------------------------------------
-
-To get an API key:
-  1. Go to: https://platform.openai.com/api-keys
-  2. Sign in or create an account
-  3. Click 'Create new secret key'
-  4. Copy the key (starts with 'sk-')
-
-Open the API keys page in your browser? [Y/n]:
-```
-
-The wizard will:
-1. **Open the OpenAI API keys page** in your browser (optional)
-2. **Validate your API key** before saving
-3. **Let you choose a model** (gpt-4o-mini, gpt-4o, etc.)
-4. **Save configuration** to `backend/.env`
 
 ### 3. Create Extension Icons
 
@@ -104,52 +77,40 @@ convert -size 128x128 xc:#4285f4 icons/icon128.png
 5. Click **Send** (or press Ctrl+Enter)
 6. The AI response appears in the response area
 
-## Getting an OpenAI API Key
+## Authentication
 
-1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
-2. Sign in or create an OpenAI account
-3. Click **Create new secret key**
-4. Give it a name (e.g., "ai-slider Extension")
-5. Copy the key immediately (it won't be shown again)
-6. Add billing/credits to your account if needed
+This extension uses your **Codex CLI login** (stored in `~/.codex/auth.json`) to access the ChatGPT Backend API. This means:
 
-**Note**: This extension uses the standard OpenAI API. There is no separate "Codex API key" - the OpenAI Codex CLI tool uses the same API key.
+- **No separate API costs** - uses your existing ChatGPT Plus/Pro subscription
+- **Same rate limits** as your ChatGPT subscription
+- **OAuth authentication** - no API keys needed
+
+```bash
+codex login
+```
 
 ## Available Models
 
-The setup wizard lets you choose from:
+Set `OPENAI_MODEL` in `backend/.env` to choose. These use your **ChatGPT subscription** (no separate API costs):
 
-| Model | Description | Cost |
-|-------|-------------|------|
-| `gpt-4o-mini` | Fast & cheap, good for most Q&A (default) | $0.15/1M tokens |
-| `gpt-4o` | Best quality, higher cost | $2.50/1M tokens |
-| `gpt-4-turbo` | Good balance of quality and speed | $10/1M tokens |
-| `gpt-3.5-turbo` | Legacy, cheapest option | $0.50/1M tokens |
-| `o3-mini` | Reasoning model, slower but thorough | $1.10/1M tokens |
+| Model | Description |
+|-------|-------------|
+| `gpt-5.1-codex-mini` | Optimized for Codex, cheaper and faster (default) |
+| `gpt-5.2-codex` | Latest frontier agentic coding model |
+| `gpt-5.1-codex-max` | Codex-optimized flagship for deep reasoning |
+| `gpt-5.2` | Latest frontier model |
 
 ## Reconfiguring
 
-To change your API key or model:
-
-```bash
-# Delete the config file
-rm backend/.env
-
-# Run the wizard again
-cd backend
-python main.py
-```
-
-Or manually edit `backend/.env`:
+To change the model, edit `backend/.env`:
 
 ```env
-OPENAI_API_KEY="sk-..."
-OPENAI_MODEL="gpt-4o"
+OPENAI_MODEL="gpt-5.2-codex"
 ```
 
 ## Security Notes
 
-- **API Key Security**: The OpenAI API key is stored server-side only, never in the extension
+- **Credential Security**: Codex credentials are stored locally by the Codex CLI, never in the extension
 - **Prompt Injection Defense**: All page content is treated as untrusted data with clear delimiters
 - **XSS Prevention**: All output is rendered as plain text using `textContent`, never `innerHTML`
 - **Input Validation**: Context limited to 40k chars in extension, 50k in backend
@@ -168,7 +129,7 @@ chrome-slider-ai/
 │   ├── icon48.png
 │   └── icon128.png
 ├── backend/
-│   ├── main.py         # FastAPI server with setup wizard
+│   ├── main.py         # FastAPI server
 │   ├── requirements.txt
 │   └── .env            # Generated config (after first run)
 └── README.md
@@ -180,9 +141,8 @@ chrome-slider-ai/
 - Ensure the Python backend is running on port 8787
 - Check that nothing else is using port 8787
 
-### "Invalid API key"
-- Delete `backend/.env` and restart to reconfigure
-- Make sure you have a valid OpenAI API key with credits
+### "No credentials found"
+- Run `codex login` and restart the backend
 
 ### "Cannot extract from browser internal pages"
 - The extension cannot access `chrome://` pages

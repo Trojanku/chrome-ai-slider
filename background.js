@@ -3,9 +3,64 @@
 const BACKEND_URL = "http://localhost:8787";
 const CONTEXT_CHAR_LIMIT = 40000;
 
+// Create context menu on install
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "ai-slider-selection",
+    title: "Continue with ai-slider",
+    contexts: ["selection"],
+  });
+});
+
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ tabId: tab.id });
+});
+
+// Handle context menu click
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "ai-slider-selection" && info.selectionText) {
+    // Open the side panel FIRST (must be synchronous with user gesture)
+    chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {
+      // Fallback to tabId if windowId fails
+      chrome.sidePanel.open({ tabId: tab.id }).catch((err) => {
+        console.error("Failed to open side panel:", err);
+      });
+    });
+
+    // Then do the async work to extract context and store selection
+    (async () => {
+      let pageContext = "";
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const text = document.body.innerText || "";
+            return text.replace(/\s+/g, " ").trim();
+          },
+        });
+        if (results && results[0]) {
+          pageContext = results[0].result || "";
+          if (pageContext.length > CONTEXT_CHAR_LIMIT) {
+            pageContext = pageContext.substring(0, CONTEXT_CHAR_LIMIT);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to extract page context:", err);
+      }
+
+      // Store the selection data for the side panel to pick up
+      await chrome.storage.local.set({
+        pendingSelection: {
+          selectedText: info.selectionText,
+          pageContext: pageContext,
+          url: tab.url,
+          title: tab.title,
+          timestamp: Date.now(),
+        },
+      });
+    })();
+  }
 });
 
 // Handle messages from the side panel
@@ -18,7 +73,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "ask") {
-    handleAsk(message.question, message.context, message.url, message.title)
+    handleAsk(message.question, message.context, message.url, message.title, message.history || [])
       .then(sendResponse)
       .catch((err) => {
         sendResponse({ error: err.message });
@@ -82,7 +137,7 @@ function extractPage() {
   return text.replace(/\s+/g, " ").trim();
 }
 
-async function handleAsk(question, context, url, title) {
+async function handleAsk(question, context, url, title, history) {
   if (!question || !question.trim()) {
     throw new Error("Please enter a question");
   }
@@ -101,6 +156,7 @@ async function handleAsk(question, context, url, title) {
       context: context,
       url: url || "",
       title: title || "",
+      history: history || [],
     }),
   });
 

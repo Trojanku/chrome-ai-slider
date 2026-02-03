@@ -1,0 +1,25 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#6366f1"/>
+
+  <!-- Page shape -->
+  <path d="M44 28h28l16 16v56a4 4 0 01-4 4H44a4 4 0 01-4-4V32a4 4 0 014-4z" fill="white" opacity="0.95"/>
+  <path d="M72 28v12a4 4 0 004 4h12" fill="none" stroke="white" stroke-width="2"/>
+
+  <!-- AI sparkle/stars -->
+  <circle cx="92" cy="36" r="4" fill="#22d3ee"/>
+  <circle cx="100" cy="48" r="3" fill="#22d3ee" opacity="0.7"/>
+  <circle cx="96" cy="58" r="2" fill="#22d3ee" opacity="0.5"/>
+
+  <!-- Text lines on page -->
+  <rect x="48" y="52" width="28" height="3" rx="1.5" fill="#6366f1" opacity="0.4"/>
+  <rect x="48" y="60" width="24" height="3" rx="1.5" fill="#6366f1" opacity="0.4"/>
+  <rect x="48" y="68" width="20" height="3" rx="1.5" fill="#6366f1" opacity="0.4"/>
+
+  <!-- Chat bubble indicator -->
+  <ellipse cx="70" cy="86" rx="14" ry="10" fill="#22d3ee"/>
+  <polygon points="62,94 66,86 58,86" fill="#22d3ee"/>
+  <circle cx="66" cy="86" r="2" fill="white"/>
+  <circle cx="70" cy="86" r="2" fill="white"/>
+  <circle cx="74" cy="86" r="2" fill="white"/>
+</svg>
