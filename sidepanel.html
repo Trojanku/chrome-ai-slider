@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ai-slider</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="chat-container">
+    <header class="chat-header">
+      <h1>ai-slider</h1>
+      <div class="header-actions">
+        <span id="context-indicator" class="context-indicator hidden"></span>
+        <button id="btn-page" type="button" class="context-btn">Use Page</button>
+      </div>
+    </header>
+
+    <div id="chat-messages" class="chat-messages">
+      <div class="welcome-message">
+        <p>Ask questions about the current page.</p>
+        <p class="hint">Click "Use Page" to load context, then start chatting.</p>
+      </div>
+    </div>
+
+    <div class="chat-input-area">
+      <input
+        type="text"
+        id="message-input"
+        placeholder="Ask a question..."
+        autocomplete="off"
+      />
+      <button id="btn-send" type="button" class="send-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
