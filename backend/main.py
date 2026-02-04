@@ -1,28 +1,31 @@
 """
 FastAPI backend for ai-slider Chrome Extension.
-Handles requests from the extension and forwards them to OpenAI.
+Handles requests from the extension and forwards them to Codex or Claude.
 
 Run with:
   python main.py
 
 Authentication:
-  - Codex CLI credentials (~/.codex/auth.json) - uses your ChatGPT subscription
+  - Codex CLI (`codex exec`) - uses your ChatGPT subscription
+  - Claude CLI (`claude -p`) - uses your Claude Code subscription
 
 Configuration:
-  OPENAI_MODEL=gpt-5.1-codex-mini (optional, can override model)
+  (none)
 """
 
-import base64
-import json
-import os
+import asyncio
+import re
+import shutil
 import sys
+import tempfile
+import time
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import httpx
 
 # Load .env file automatically (from backend directory)
 ENV_FILE = Path(__file__).parent / ".env"
@@ -31,20 +34,16 @@ load_dotenv(ENV_FILE)
 # Configuration
 MAX_CONTEXT_CHARS = 50000
 MAX_QUESTION_CHARS = 2000
+SESSION_EXPIRY_SECONDS = 3600  # 1 hour
 
-# Model to use (can override with OPENAI_MODEL env var)
-# Available Codex models:
-#   gpt-5.2-codex      - Latest frontier agentic coding model
-#   gpt-5.1-codex-max  - Codex-optimized flagship for deep and fast reasoning
-#   gpt-5.1-codex-mini - Optimized for codex, cheaper and faster (default)
-#   gpt-5.2            - Latest frontier model
-CODEX_DEFAULT_MODEL = "gpt-5.1-codex-mini"
+# Codex CLI configuration
+CODEX_CLI_COMMAND = "codex"
 
-# Codex credentials path
-CODEX_AUTH_FILE = Path.home() / ".codex" / "auth.json"
+# Claude CLI configuration
+CLAUDE_CLI_COMMAND = "claude"
 
-# ChatGPT Backend API (uses your ChatGPT subscription, NOT the public OpenAI API)
-CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
+# In-memory session store
+sessions: dict[str, dict] = {}
 
 app = FastAPI(title="Page Q&A Backend")
 
@@ -68,10 +67,85 @@ class AskRequest(BaseModel):
     url: str = Field(default="", max_length=2000)
     title: str = Field(default="", max_length=500)
     history: list[HistoryMessage] = Field(default_factory=list, max_length=50)
+    provider: str = Field(default="codex", pattern="^(codex|claude)$")
 
 
 class AskResponse(BaseModel):
     answer: str
+
+
+class SessionCreateRequest(BaseModel):
+    context: str = Field(..., max_length=MAX_CONTEXT_CHARS)
+    url: str = Field(default="", max_length=2000)
+    title: str = Field(default="", max_length=500)
+
+
+class SessionCreateResponse(BaseModel):
+    session_id: str
+
+
+class SessionAskRequest(BaseModel):
+    session_id: str
+    question: str = Field(..., max_length=MAX_QUESTION_CHARS)
+    provider: str = Field(default="codex", pattern="^(codex|claude)$")
+
+
+def smart_truncate(text: str, max_chars: int) -> str:
+    """Truncate text at natural boundaries (sentence, paragraph, or word).
+
+    Tries to find a clean break point near the limit:
+    1. Sentence boundary (. ! ? followed by space or newline)
+    2. Paragraph boundary (double newline)
+    3. Word boundary (space)
+    4. Hard cut with ellipsis
+    """
+    if len(text) <= max_chars:
+        return text
+
+    # Look for sentence boundaries in the last 500 chars before limit
+    search_start = max(0, max_chars - 500)
+    search_region = text[search_start:max_chars]
+
+    # Find sentence-ending punctuation followed by space or newline
+    sentence_pattern = re.compile(r'[.!?][\s\n]')
+    matches = list(sentence_pattern.finditer(search_region))
+
+    if matches:
+        # Use the last sentence boundary found
+        last_match = matches[-1]
+        cut_point = search_start + last_match.end()
+        return text[:cut_point].rstrip()
+
+    # Try paragraph boundary (double newline)
+    para_idx = search_region.rfind('\n\n')
+    if para_idx != -1:
+        cut_point = search_start + para_idx
+        return text[:cut_point].rstrip()
+
+    # Try single newline
+    newline_idx = search_region.rfind('\n')
+    if newline_idx != -1:
+        cut_point = search_start + newline_idx
+        return text[:cut_point].rstrip()
+
+    # Fall back to word boundary
+    space_idx = text[:max_chars].rfind(' ')
+    if space_idx > max_chars - 200:  # Only use if reasonably close to limit
+        return text[:space_idx].rstrip() + "..."
+
+    # Hard cut as last resort
+    return text[:max_chars].rstrip() + "..."
+
+
+def cleanup_expired_sessions():
+    """Remove sessions that have expired."""
+    now = time.time()
+    expired = [
+        sid for sid, data in sessions.items()
+        if now - data["created_at"] > SESSION_EXPIRY_SECONDS
+    ]
+    for sid in expired:
+        del sessions[sid]
 
 
 # System prompt with strong injection defense
@@ -115,159 +189,135 @@ END_UNTRUSTED_PAGE_TEXT
 User Question: {question}"""
 
 
-def decode_jwt_payload(token: str) -> dict:
-    """Decode JWT payload without verification (we just need to read claims)."""
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return {}
-        payload = parts[1]
-        # Add padding if needed
-        padding = 4 - len(payload) % 4
-        if padding != 4:
-            payload += "=" * padding
-        decoded = base64.urlsafe_b64decode(payload)
-        return json.loads(decoded)
-    except Exception:
-        return {}
+def is_claude_cli_available() -> bool:
+    """Check if the Claude CLI is available on PATH."""
+    return shutil.which(CLAUDE_CLI_COMMAND) is not None
 
 
-def get_codex_credentials() -> tuple[str, str] | None:
-    """
-    Try to read credentials from Codex CLI.
-    Returns (access_token, account_id) or None.
-    """
-    if not CODEX_AUTH_FILE.exists():
-        return None
-
-    try:
-        with open(CODEX_AUTH_FILE) as f:
-            auth_data = json.load(f)
-
-        tokens = auth_data.get("tokens", {})
-        access_token = tokens.get("access_token")
-        account_id = tokens.get("account_id")
-
-        if not access_token:
-            return None
-
-        # If account_id not in tokens, try to extract from JWT
-        if not account_id:
-            payload = decode_jwt_payload(access_token)
-            auth_claims = payload.get("https://api.openai.com/auth", {})
-            account_id = auth_claims.get("chatgpt_account_id")
-
-        if access_token and account_id:
-            return access_token.strip(), account_id.strip()
-
-    except (json.JSONDecodeError, KeyError, IOError):
-        pass
-
-    return None
+def is_codex_cli_available() -> bool:
+    """Check if the Codex CLI is available on PATH."""
+    return shutil.which(CODEX_CLI_COMMAND) is not None
 
 
-def get_model() -> str:
-    """Get model from environment or use default."""
-    return os.environ.get("OPENAI_MODEL", CODEX_DEFAULT_MODEL).strip()
-
-
-def extract_text_from_stream(stream_text: str) -> str:
-    """Extract text from SSE stream response."""
-    text_parts = []
-    for line in stream_text.split("\n"):
-        if line.startswith("data: "):
-            try:
-                data = json.loads(line[6:])
-                # Extract text deltas
-                if data.get("type") == "response.output_text.delta":
-                    delta = data.get("delta", "")
-                    if delta:
-                        text_parts.append(delta)
-            except json.JSONDecodeError:
-                continue
-    return "".join(text_parts) if text_parts else "No response generated."
-
-
-def messages_to_codex_input(
-    user_message: str, history: list[HistoryMessage] | None = None
-) -> list[dict]:
-    """Convert user message and history to Codex Responses API input format."""
-    items = []
-
-    # Add conversation history
-    if history:
-        for msg in history:
-            if msg.role == "user":
-                items.append(
-                    {
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": msg.content}],
-                    }
-                )
-            else:
-                # Assistant messages use "output_text" type
-                items.append(
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": msg.content}],
-                    }
-                )
-
-    # Add current user message
-    items.append(
-        {
-            "role": "user",
-            "content": [{"type": "input_text", "text": user_message}],
-        }
-    )
-
-    return items
-
-
-async def call_openai_with_codex(
-    access_token: str,
-    account_id: str,
-    instructions: str,
+def build_cli_prompt(
+    system_prompt: str,
     user_message: str,
-    model: str,
     history: list[HistoryMessage] | None = None,
 ) -> str:
-    """Make API call using Codex OAuth credentials via ChatGPT Backend API."""
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-        "chatgpt-account-id": account_id,
-        "OpenAI-Beta": "responses=experimental",
-        "originator": "codex_cli_rs",
-        "Accept": "text/event-stream",
-    }
+    """Build a single prompt string for a CLI."""
+    sections = [f"SYSTEM PROMPT:\n{system_prompt}"]
 
-    # Codex Responses API format
-    # Required: stream=True, store=False
-    # System prompt goes in "instructions" field
-    payload = {
-        "model": model,
-        "instructions": instructions,
-        "input": messages_to_codex_input(user_message, history),
-        "store": False,
-        "stream": True,
-    }
+    if history:
+        history_lines = []
+        for msg in history:
+            role = "User" if msg.role == "user" else "Assistant"
+            history_lines.append(f"{role}: {msg.content}")
+        sections.append("CONVERSATION HISTORY:\n" + "\n".join(history_lines))
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(
-            CODEX_RESPONSES_URL, headers=headers, json=payload
+    sections.append(f"CURRENT USER MESSAGE:\n{user_message}")
+    return "\n\n".join(sections)
+
+
+async def call_prompt_cli(command: str, label: str, prompt: str) -> str:
+    """Run a CLI command with a prompt and return stdout."""
+    process = await asyncio.create_subprocess_exec(
+        command,
+        "-p",
+        prompt,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        error_text = stderr.decode().strip() or stdout.decode().strip()
+        raise HTTPException(
+            status_code=500,
+            detail=f"{label} CLI error: {error_text or 'unknown error'}",
         )
 
-        if response.status_code != 200:
-            error_text = response.text
-            print(f"Codex API error {response.status_code}: {error_text}")
+    output = stdout.decode().strip()
+    return output if output else "No response generated."
+
+
+async def call_codex_cli(prompt: str) -> str:
+    """Run the Codex CLI non-interactively and return the last message."""
+    if not is_codex_cli_available():
+        raise HTTPException(
+            status_code=500,
+            detail="Codex CLI not found. Install Codex and ensure 'codex' is on PATH.",
+        )
+
+    with tempfile.NamedTemporaryFile(prefix="codex-last-message-", delete=False) as tmp:
+        temp_path = Path(tmp.name)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            CODEX_CLI_COMMAND,
+            "exec",
+            "--skip-git-repo-check",
+            "--output-last-message",
+            str(temp_path),
+            "-",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate(input=prompt.encode())
+
+        if process.returncode != 0:
+            error_text = stderr.decode().strip() or stdout.decode().strip()
             raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Codex API error: {error_text}",
+                status_code=500,
+                detail=f"Codex CLI error: {error_text or 'unknown error'}",
             )
 
-        return extract_text_from_stream(response.text)
+        output = ""
+        if temp_path.exists():
+            output = temp_path.read_text().strip()
+
+        if output:
+            return output
+
+        fallback = stdout.decode().strip()
+        return fallback if fallback else "No response generated."
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+async def handle_codex_request(
+    user_message: str,
+    history: list[HistoryMessage] | None,
+) -> str:
+    """Handle request using Codex provider."""
+    prompt = build_cli_prompt(
+        system_prompt=SYSTEM_PROMPT,
+        user_message=user_message,
+        history=history,
+    )
+    return await call_codex_cli(prompt)
+
+
+async def handle_claude_request(
+    user_message: str,
+    history: list[HistoryMessage] | None,
+) -> str:
+    """Handle request using Claude provider."""
+    if not is_claude_cli_available():
+        raise HTTPException(
+            status_code=500,
+            detail="Claude CLI not found. Install Claude Code and ensure 'claude' is on PATH.",
+        )
+
+    prompt = build_cli_prompt(
+        system_prompt=SYSTEM_PROMPT,
+        user_message=user_message,
+        history=history,
+    )
+    return await call_prompt_cli(
+        command=CLAUDE_CLI_COMMAND,
+        label="Claude",
+        prompt=prompt,
+    )
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -280,7 +330,7 @@ async def ask(request: AskRequest) -> AskResponse:
     if not request.context.strip():
         raise HTTPException(status_code=400, detail="Context cannot be empty")
 
-    context = request.context[:MAX_CONTEXT_CHARS]
+    context = smart_truncate(request.context, MAX_CONTEXT_CHARS)
 
     user_message = build_user_message(
         question=request.question.strip(),
@@ -289,74 +339,119 @@ async def ask(request: AskRequest) -> AskResponse:
         title=request.title,
     )
 
-    codex_creds = get_codex_credentials()
-    if codex_creds:
-        access_token, account_id = codex_creds
-        model = get_model()
-        try:
-            answer = await call_openai_with_codex(
-                access_token=access_token,
-                account_id=account_id,
-                instructions=SYSTEM_PROMPT,
-                user_message=user_message,
-                model=model,
-                history=request.history if request.history else None,
-            )
-        except HTTPException as exc:
-            if exc.status_code == 401:
-                raise HTTPException(
-                    status_code=401,
-                    detail=(
-                        "Codex credentials expired or invalid. "
-                        "Re-login using 'codex login'."
-                    ),
-                )
-            raise
-        return AskResponse(answer=answer)
+    history = request.history if request.history else None
 
-    raise HTTPException(
-        status_code=500,
-        detail="No credentials found. Run 'codex login'.",
+    if request.provider == "claude":
+        answer = await handle_claude_request(user_message, history)
+    else:
+        answer = await handle_codex_request(user_message, history)
+
+    return AskResponse(answer=answer)
+
+
+@app.post("/session/create", response_model=SessionCreateResponse)
+async def create_session(request: SessionCreateRequest) -> SessionCreateResponse:
+    """Create a new session with stored context."""
+    cleanup_expired_sessions()
+
+    if not request.context.strip():
+        raise HTTPException(status_code=400, detail="Context cannot be empty")
+
+    session_id = str(uuid.uuid4())
+    context = smart_truncate(request.context, MAX_CONTEXT_CHARS)
+
+    sessions[session_id] = {
+        "context": context,
+        "url": request.url,
+        "title": request.title,
+        "history": [],
+        "created_at": time.time(),
+    }
+
+    return SessionCreateResponse(session_id=session_id)
+
+
+@app.post("/session/ask", response_model=AskResponse)
+async def session_ask(request: SessionAskRequest) -> AskResponse:
+    """Ask a question using an existing session."""
+    cleanup_expired_sessions()
+
+    if request.session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found or expired")
+
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    session = sessions[request.session_id]
+
+    user_message = build_user_message(
+        question=request.question.strip(),
+        context=session["context"],
+        url=session["url"],
+        title=session["title"],
     )
+
+    history = session["history"] if session["history"] else None
+
+    if request.provider == "claude":
+        answer = await handle_claude_request(user_message, history)
+    else:
+        answer = await handle_codex_request(user_message, history)
+
+    # Store in session history
+    session["history"].append(HistoryMessage(role="user", content=request.question.strip()))
+    session["history"].append(HistoryMessage(role="assistant", content=answer))
+
+    return AskResponse(answer=answer)
 
 
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    codex_creds = get_codex_credentials()
+    codex_available = is_codex_cli_available()
+    claude_available = is_claude_cli_available()
 
-    if codex_creds:
-        source = "codex"
-    else:
-        source = "none"
+    providers = []
+    if codex_available:
+        providers.append("codex")
+    if claude_available:
+        providers.append("claude")
 
-    return {"status": "ok", "model": get_model(), "auth_source": source}
+    return {
+        "status": "ok",
+        "providers": providers,
+        "codex_available": codex_available,
+        "claude_available": claude_available,
+    }
 
 
 if __name__ == "__main__":
     import uvicorn
 
     # Check credentials
-    codex_creds = get_codex_credentials()
+    claude_available = is_claude_cli_available()
+    codex_available = is_codex_cli_available()
 
-    if codex_creds:
-        access_token, account_id = codex_creds
-        print("Found Codex CLI credentials (~/.codex/auth.json)")
-        print(f"Account ID: {account_id[:8]}...")
-        print("Using ChatGPT subscription via Codex Backend API")
-        auth_source = "ChatGPT subscription (Codex)"
+    print("Available providers:")
+    if codex_available:
+        print("  - Codex: available (CLI on PATH)")
     else:
-        print("ERROR: No credentials found.")
+        print("  - Codex: not configured (install Codex CLI)")
+
+    if claude_available:
+        print("  - Claude: available (CLI on PATH)")
+    else:
+        print("  - Claude: not configured (install Claude Code CLI)")
+
+    if not codex_available and not claude_available:
         print()
-        print("Login with Codex CLI to use your ChatGPT subscription:")
-        print("  codex login")
+        print("ERROR: No providers configured.")
+        print("At least one provider is required:")
+        print("  - Codex: install Codex CLI and run 'codex login'")
+        print("  - Claude: install Claude Code CLI and run 'claude login'")
         print()
         sys.exit(1)
 
-    model = get_model()
-    print(f"Auth: {auth_source}")
-    print(f"Model: {model}")
-    print(f"API: {CODEX_RESPONSES_URL}")
     print(f"Server: http://localhost:8787")
 
     uvicorn.run(app, host="127.0.0.1", port=8787)

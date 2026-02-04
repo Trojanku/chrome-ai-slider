@@ -17,8 +17,11 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open PagePilot"
+    "default_title": "Open AI Slider"
   },
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

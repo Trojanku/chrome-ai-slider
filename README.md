@@ -1,43 +1,25 @@
-# ai-slider Chrome Extension
+# AI Slider
 
-A minimal Chrome extension that lets you ask questions about the current page content using AI, powered by your existing Codex subscription.
+Ask questions about any webpage using AI.
 
-## Overview
+## Quick Start
 
-- Side panel UI for questions about the current page
-- Extracts selection or full page text (truncated deterministically)
-- Uses your Codex CLI login (no API keys; no extra API billing)
-- Local-only credentials stored in `~/.codex/auth.json`
-
-## Setup
-
-### 1. Install the Backend
-
+### 1. Start the backend
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+./setup.sh      # One-time setup
+python main.py  # Start server
 ```
 
-### 2. Run the Backend (Codex subscription required)
+### 2. Load the extension
+1. Go to `chrome://extensions`
+2. Enable "Developer mode"
+3. Click "Load unpacked" → select this folder
 
-```bash
-cd backend
-codex login
-python main.py
-```
+### 3. Use it
+- Click the extension icon to open the side panel
+- Ask questions about the current page
 
-### 3. Load the Extension in Chrome
-
-1. Open `chrome://extensions/`
-2. Enable Developer mode
-3. Click Load unpacked
-4. Select the project folder containing `manifest.json`
-
-### 4. Use It
-
-1. Open any web page
-2. Click the extension icon to open the side panel
-3. Use selection or page text, ask your question, click Send
-
+## Requirements
+- Python 3.10+
+- [Codex CLI](https://github.com/openai/codex) or [Claude CLI](https://github.com/anthropics/claude-code)

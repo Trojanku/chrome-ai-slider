@@ -3,23 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PagePilot</title>
+  <title>AI Slider</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
   <div class="chat-container">
     <header class="chat-header">
-      <h1>ai-slider</h1>
+      <h1>AI Slider</h1>
       <div class="header-actions">
-        <span id="context-indicator" class="context-indicator hidden"></span>
-        <button id="btn-page" type="button" class="context-btn">Use Page</button>
+        <select id="provider-select" class="provider-select">
+          <option value="codex">Codex</option>
+          <option value="claude">Claude</option>
+        </select>
       </div>
     </header>
 
     <div id="chat-messages" class="chat-messages">
       <div class="welcome-message">
-        <p>Ask questions about the current page.</p>
-        <p class="hint">Click "Use Page" to load context, then start chatting.</p>
+        <p>Ask questions about this page</p>
       </div>
     </div>
 
@@ -29,6 +30,7 @@
         id="message-input"
         placeholder="Ask a question..."
         autocomplete="off"
+        autofocus
       />
       <button id="btn-send" type="button" class="send-btn">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -11,8 +11,8 @@ html, body {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.6;
   background: #1a1a1a;
   color: #e5e5e5;
 }
@@ -37,7 +37,7 @@ body {
 }
 
 .chat-header h1 {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: #e5e5e5;
   letter-spacing: -0.02em;
@@ -49,21 +49,9 @@ body {
   gap: 10px;
 }
 
-.context-indicator {
-  font-size: 11px;
-  color: #6366f1;
-  background: rgba(99, 102, 241, 0.15);
-  padding: 4px 8px;
-  border-radius: 12px;
-}
-
-.context-indicator.hidden {
-  display: none;
-}
-
-.context-btn {
-  padding: 6px 12px;
-  font-size: 12px;
+.provider-select {
+  padding: 6px 10px;
+  font-size: 13px;
   font-weight: 500;
   background: #252525;
   color: #e5e5e5;
@@ -71,21 +59,37 @@ body {
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.2s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 26px;
 }
 
-.context-btn:hover:not(:disabled) {
-  background: #2a2a2a;
+.provider-select:hover:not(:disabled) {
+  background-color: #2a2a2a;
   border-color: #4a4a4a;
 }
 
-.context-btn:disabled {
+.provider-select:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.provider-select:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.context-btn.loaded {
-  border-color: #6366f1;
-  color: #6366f1;
+.provider-select option {
+  background: #252525;
+  color: #e5e5e5;
+}
+
+.provider-select option:disabled {
+  color: #666;
 }
 
 /* Chat Messages Area */
@@ -137,10 +141,53 @@ body {
   max-width: 85%;
   padding: 10px 14px;
   border-radius: 16px;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.6;
   word-wrap: break-word;
-  white-space: pre-wrap;
+  white-space: normal;
+}
+
+.message pre {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 10px 12px;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.message code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.message pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.message blockquote {
+  border-left: 3px solid rgba(99, 102, 241, 0.6);
+  padding-left: 10px;
+  color: #c1c2f6;
+  margin: 8px 0;
+}
+
+.message ul,
+.message ol {
+  margin: 8px 0 8px 18px;
+}
+
+.message li {
+  margin: 4px 0;
+}
+
+.message a {
+  color: #a5a6f6;
+  text-decoration: underline;
 }
 
 .message.user {
@@ -169,7 +216,7 @@ body {
   background: rgba(99, 102, 241, 0.1);
   color: #a5a6f6;
   border: 1px solid rgba(99, 102, 241, 0.2);
-  font-size: 12px;
+  font-size: 13px;
   max-width: 95%;
   text-align: center;
 }
@@ -180,7 +227,7 @@ body {
   color: #86efac;
   border: 1px solid rgba(34, 197, 94, 0.25);
   border-left: 3px solid #22c55e;
-  font-size: 13px;
+  font-size: 14px;
   max-width: 95%;
 }
 
@@ -241,7 +288,7 @@ body {
   padding: 10px 16px;
   border: 1px solid #3a3a3a;
   border-radius: 20px;
-  font-size: 14px;
+  font-size: 15px;
   font-family: inherit;
   background: #252525;
   color: #e5e5e5;
