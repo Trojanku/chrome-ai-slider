@@ -172,6 +172,7 @@ function renderMarkdownLite(raw) {
   text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   text = text.replace(/\*(.+?)\*/g, "<em>$1</em>");
   text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  text = text.replace(/\n{3,}/g, "\n\n"); // Collapse 3+ newlines to 2
   text = text.replace(/\n/g, "<br>");
 
   text = text.replace(/@@INLINECODE(\d+)@@/g, (match, index) => {
