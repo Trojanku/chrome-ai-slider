@@ -1,6 +1,6 @@
 # AI Slider
 
-Ask questions about any webpage using AI.
+A Chrome extension for quickly asking Claude or Codex questions with the current page as context.
 
 Uses your existing Codex or Claude subscription — no API keys, no extra costs.
 
