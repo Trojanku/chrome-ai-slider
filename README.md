@@ -4,6 +4,8 @@ Ask questions about any webpage using AI.
 
 Uses your existing Codex or Claude subscription — no API keys, no extra costs.
 
+![AI Slider Screenshot](assets/screenshot.png)
+
 ## Quick Start
 
 ### 1. Start the backend
