@@ -18,7 +18,7 @@ python main.py  # Start server
 
 ### 3. Use it
 - Click the extension icon to open the side panel
-- Ask questions about the current page
+- Or select text → right-click → "Ask AI Slider"
 
 ## Requirements
 - Python 3.10+
