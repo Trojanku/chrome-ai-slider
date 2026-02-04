@@ -27,3 +27,9 @@ python main.py  # Start server
 ## Requirements
 - Python 3.10+
 - [Codex CLI](https://github.com/openai/codex) or [Claude CLI](https://github.com/anthropics/claude-code)
+
+## Disclaimer
+
+- **Prompt injection risk**: The AI reads page content, which could include hidden malicious instructions. Don't blindly trust responses on untrusted sites.
+- **Data privacy**: Page content is sent to Codex/Claude via their CLI tools. Nothing is stored or sent elsewhere.
+- **Not a security tool**: This is a convenience tool, not designed for analyzing suspicious content.
