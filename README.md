@@ -1,8 +1,8 @@
 # AI Slider
 
-A Chrome extension for quickly asking Claude or Codex questions with the current page as context.
+Chrome extension that lets you ask Claude or Codex about the current page using your existing, locally authenticated CLI.
 
-Uses your existing Codex or Claude subscription — no API keys, no extra costs.
+The extension sends page context and your question to a small local backend, which forwards it to your already-logged-in Claude/Codex CLI and returns the response in a browser's side panel.
 
 ![AI Slider Screenshot](assets/screenshot.png)
 
